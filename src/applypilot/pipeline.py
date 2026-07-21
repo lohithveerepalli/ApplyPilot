@@ -74,6 +74,21 @@ def _run_discover(workers: int = 1) -> dict:
         console.print(f"  [red]JobSpy error:[/red] {e}")
         stats["jobspy"] = f"error: {e}"
 
+    # Greenhouse / Lever / Ashby public board APIs (fast, high signal)
+    console.print("  [cyan]ATS boards (Greenhouse / Lever / Ashby)...[/cyan]")
+    try:
+        from applypilot.discovery.ats_boards import run_ats_discovery
+        ats_stats = run_ats_discovery(workers=max(4, workers * 2))
+        stats["ats_boards"] = ats_stats
+        console.print(
+            f"    → +{ats_stats.get('new', 0)} new from "
+            f"{ats_stats.get('boards_with_jobs', 0)} boards"
+        )
+    except Exception as e:
+        log.error("ATS board crawl failed: %s", e)
+        console.print(f"  [red]ATS boards error:[/red] {e}")
+        stats["ats_boards"] = f"error: {e}"
+
     # Workday corporate scraper
     console.print("  [cyan]Workday corporate scraper...[/cyan]")
     try:

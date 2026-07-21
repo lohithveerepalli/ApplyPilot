@@ -18,6 +18,8 @@ case "$cmd" in
   apply)    applypilot apply -w 2 "$@" ;;
   continuous) applypilot apply --continuous -w 2 "$@" ;;
   resumes)  applypilot resumes list ;;
+  hunt)     applypilot hunt --once -w 8 "$@" ;;
+  hunt-loop) applypilot hunt -i 300 -w 8 "$@" ;;
   help|*)
     cat <<'H'
 Usage: ./start.sh <command>
@@ -26,11 +28,13 @@ Usage: ./start.sh <command>
   run         Full pipeline (discover → tailor)
   discover    Discover + enrich only
   tailor      Score + tailor + cover only
+  hunt        One fast ATS-board pass (Greenhouse/Lever/Ashby)
+  hunt-loop   Poll every 5 min (24/7 style) — Ctrl+C to stop
   track       Application stats
   status      Full status
-  dry         Auto-apply dry-run (needs Chrome)
-  apply       Auto-apply live (needs Chrome)
-  continuous  Auto-apply forever (needs Chrome)
+  dry         Auto-apply dry-run (needs Claude + Chrome)
+  apply       Auto-apply live (needs Claude + Chrome)
+  continuous  Auto-apply forever (needs Claude + Chrome)
   resumes     List base resumes
 H
     ;;

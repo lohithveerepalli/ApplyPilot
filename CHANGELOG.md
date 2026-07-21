@@ -5,6 +5,21 @@ All notable changes to ApplyPilot will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-07-21
+
+### Added
+- **Hunt mode** (`applypilot hunt`) — poll Greenhouse/Lever/Ashby boards on an interval,
+  score + tailor only fresh jobs, optional auto-apply (speed path toward ~30 min apply)
+- **ATS board scrapers** — public JSON APIs for dozens of company career boards
+  (`config/ats_boards.yaml`)
+- **Per-ATS apply playbooks** — Greenhouse, Lever, Ashby, Workday, Indeed, Amazon,
+  Google, Meta, Microsoft, LinkedIn injected into browser agent prompts
+- **`applypilot ats [url]`** — detect ATS type or list configured boards
+- Docs: `docs/HUNT_AND_ATS.md`
+
+### Changed
+- Full `run discover` also crawls ATS boards alongside JobSpy/Workday
+
 ## [0.4.0] - 2026-07-21
 
 Fork-focused release for high-quality technical volume applications

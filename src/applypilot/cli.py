@@ -524,6 +524,83 @@ def dashboard() -> None:
 
 
 @app.command()
+def hunt(
+    interval: int = typer.Option(300, "--interval", "-i", help="Seconds between hunt passes (default 5 min)."),
+    max_age: int = typer.Option(180, "--max-age", help="Only score/tailor jobs discovered in last N minutes."),
+    min_score: int = typer.Option(7, "--min-score", help="Minimum fit score to tailor/apply."),
+    workers: int = typer.Option(6, "--workers", "-w", help="Parallel board fetch workers."),
+    full: bool = typer.Option(False, "--full", help="Also run JobSpy + Workday each pass (slower)."),
+    apply: bool = typer.Option(False, "--apply", help="Auto-apply ready jobs each pass (needs Claude Tier 3)."),
+    apply_limit: int = typer.Option(3, "--apply-limit", help="Max applications per hunt pass."),
+    validation: str = typer.Option("normal", "--validation", help="strict|normal|lenient for tailoring."),
+    once: bool = typer.Option(False, "--once", help="Single pass then exit (good for cron)."),
+) -> None:
+    """24/7-style hunt: poll ATS boards → score → tailor → optional apply.
+
+    Targets Greenhouse / Lever / Ashby public APIs (dozens of companies) for
+    fast discovery. Goal: materials ready within ~30 minutes of a new posting.
+
+    Examples:
+      applypilot hunt --once -w 8
+      applypilot hunt -i 300 --min-score 7
+      applypilot hunt --apply --apply-limit 2   # needs Claude login
+    """
+    _bootstrap()
+
+    if validation not in ("strict", "normal", "lenient"):
+        console.print(f"[red]Invalid --validation:[/red] {validation}")
+        raise typer.Exit(code=1)
+
+    if apply:
+        from applypilot.config import check_tier
+        check_tier(3, "hunt --apply")
+
+    from applypilot.hunt import run_hunt_loop
+
+    run_hunt_loop(
+        interval_seconds=interval,
+        max_age_minutes=max_age,
+        min_score=min_score,
+        workers=workers,
+        include_jobspy=full,
+        auto_apply=apply,
+        apply_limit=apply_limit,
+        validation_mode=validation,
+        once=once,
+    )
+
+
+@app.command("ats")
+def ats_info(
+    url: Optional[str] = typer.Argument(None, help="Job URL to classify."),
+) -> None:
+    """Detect ATS type for a URL, or list configured boards."""
+    from applypilot.ats import detect_ats
+    from applypilot.discovery.ats_boards import load_ats_boards
+
+    if url:
+        info = detect_ats(url)
+        console.print(f"URL:  {url}")
+        console.print(f"ATS:  [bold]{info.name}[/bold]")
+        console.print(f"Difficulty: {info.difficulty}")
+        console.print(f"Auto-apply recommended: {info.supports_auto}")
+        if info.notes:
+            console.print(f"Notes: {info.notes}")
+        return
+
+    cfg = load_ats_boards()
+    gh = cfg.get("greenhouse") or []
+    lv = cfg.get("lever") or []
+    ash = cfg.get("ashby") or []
+    careers = cfg.get("careers") or []
+    console.print(f"Greenhouse boards: {len(gh)}")
+    console.print(f"Lever boards:      {len(lv)}")
+    console.print(f"Ashby boards:      {len(ash)}")
+    console.print(f"Careers targets:   {len(careers)} (hard apply — discovery notes only)")
+    console.print("\nEdit registry: src/applypilot/config/ats_boards.yaml")
+
+
+@app.command()
 def doctor() -> None:
     """Check your setup and diagnose missing requirements."""
     import shutil

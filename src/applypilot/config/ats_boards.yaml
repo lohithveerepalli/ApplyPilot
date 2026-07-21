@@ -1,0 +1,107 @@
+# ATS job board registry — public APIs / career boards
+# Used by discovery/ats_boards.py and hunt mode.
+#
+# board_token = Greenhouse board token (from boards.greenhouse.io/{token})
+# company     = Lever company slug (jobs.lever.co/{company})
+# ashby       = Ashby job board name
+#
+# Focus: infra / AI / hardware / data center friendly employers.
+
+greenhouse:
+  # Hyperscale / AI infra / hardware-heavy
+  - { token: nvidia, name: "NVIDIA" }
+  - { token: amd, name: "AMD" }
+  - { token: intel, name: "Intel" }
+  - { token: broadcom, name: "Broadcom" }
+  - { token: marvell, name: "Marvell" }
+  - { token: purestorage, name: "Pure Storage" }
+  - { token: databricks, name: "Databricks" }
+  - { token: openai, name: "OpenAI" }
+  - { token: anthropic, name: "Anthropic" }
+  - { token: scaleai, name: "Scale AI" }
+  - { token: cerebras, name: "Cerebras" }
+  - { token: sambanova, name: "SambaNova" }
+  - { token: coreweave, name: "CoreWeave" }
+  - { token: lambda, name: "Lambda" }
+  - { token: crusoe, name: "Crusoe" }
+  - { token: vast, name: "VAST Data" }
+  - { token: cloudflare, name: "Cloudflare" }
+  - { token: digitalocean, name: "DigitalOcean" }
+  - { token: redis, name: "Redis" }
+  - { token: elastic, name: "Elastic" }
+  - { token: hashicorp, name: "HashiCorp" }
+  - { token: datadog, name: "Datadog" }
+  - { token: stripe, name: "Stripe" }
+  - { token: airbnb, name: "Airbnb" }
+  - { token: dropbox, name: "Dropbox" }
+  - { token: pinterest, name: "Pinterest" }
+  - { token: discord, name: "Discord" }
+  - { token: figma, name: "Figma" }
+  - { token: notion, name: "Notion" }
+  - { token: reddit, name: "Reddit" }
+  - { token: robinhood, name: "Robinhood" }
+  - { token: coinbase, name: "Coinbase" }
+  - { token: rivian, name: "Rivian" }
+  - { token: anduril, name: "Anduril" }
+  - { token: spacex, name: "SpaceX" }
+  - { token: tesla, name: "Tesla" }
+  - { token: twilio, name: "Twilio" }
+  - { token: okta, name: "Okta" }
+  - { token: crowdstrike, name: "CrowdStrike" }
+  - { token: palantir, name: "Palantir" }
+  - { token: snowflake, name: "Snowflake" }
+
+lever:
+  - { company: netflix, name: "Netflix" }
+  - { company: twilio, name: "Twilio" }
+  - { company: palantir, name: "Palantir" }
+  - { company: canva, name: "Canva" }
+  - { company: fingerfood, name: "Finger Food" }
+  - { company: plusai, name: "PlusAI" }
+  - { company: continuum, name: "Continuum" }
+
+ashby:
+  - { board: openai, name: "OpenAI (Ashby)" }
+  - { board: anthropic, name: "Anthropic (Ashby)" }
+  - { board: ramp, name: "Ramp" }
+  - { board: linear, name: "Linear" }
+  - { board: notion, name: "Notion (Ashby)" }
+  - { board: vercel, name: "Vercel" }
+  - { board: retool, name: "Retool" }
+  - { board: cursor, name: "Cursor" }
+  - { board: perplexity, name: "Perplexity" }
+  - { board: together, name: "Together AI" }
+
+# Major career sites — discovery via public search pages / APIs where available.
+# Apply strategies differ (see ats/strategies.py). Many require manual or Claude.
+careers:
+  - { id: amazon, name: "Amazon", careers_url: "https://www.amazon.jobs/en/search", ats: "amazon", apply_difficulty: hard }
+  - { id: google, name: "Google", careers_url: "https://careers.google.com/jobs/results/", ats: "google", apply_difficulty: hard }
+  - { id: meta, name: "Meta", careers_url: "https://www.metacareers.com/jobs", ats: "meta", apply_difficulty: hard }
+  - { id: microsoft, name: "Microsoft", careers_url: "https://jobs.careers.microsoft.com/global/en/search", ats: "microsoft", apply_difficulty: hard }
+  - { id: apple, name: "Apple", careers_url: "https://jobs.apple.com/en-us/search", ats: "apple", apply_difficulty: hard }
+  - { id: oracle, name: "Oracle", careers_url: "https://careers.oracle.com/", ats: "oracle", apply_difficulty: medium }
+  - { id: ibm, name: "IBM", careers_url: "https://www.ibm.com/careers/search", ats: "ibm", apply_difficulty: medium }
+  - { id: cisco, name: "Cisco", careers_url: "https://jobs.cisco.com/jobs/SearchJobs", ats: "workday", apply_difficulty: medium }
+  - { id: arista, name: "Arista", careers_url: "https://www.arista.com/en/careers/open-positions", ats: "greenhouse", apply_difficulty: medium }
+  - { id: juniper, name: "Juniper", careers_url: "https://jobs.juniper.net/", ats: "workday", apply_difficulty: medium }
+
+# Title keywords that mark a job as high priority for hunt mode (infra focus)
+priority_title_keywords:
+  - "data center"
+  - "datacenter"
+  - "hardware validation"
+  - "server test"
+  - "hpc"
+  - "gpu"
+  - "ai infrastructure"
+  - "ml infrastructure"
+  - "network engineer"
+  - "site reliability"
+  - "platform engineer"
+  - "rack"
+  - "infrastructure technician"
+  - "facilities technician"
+  - "silicon validation"
+  - "bring-up"
+  - "bringup"

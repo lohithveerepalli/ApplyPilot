@@ -513,7 +513,23 @@ def build_prompt(job: dict, tailored_resume: str,
     else:
         submit_instruction = "BEFORE clicking Submit/Apply, take a snapshot and review EVERY field on the page. Verify all data matches the APPLICANT PROFILE and TAILORED RESUME -- name, email, phone, location, work auth, resume uploaded, cover letter if applicable. If anything is wrong or missing, fix it FIRST. Only click Submit after confirming everything is correct."
 
+    # Per-ATS playbook (Greenhouse / Lever / Workday / Amazon / etc.)
+    try:
+        from applypilot.ats import get_apply_strategy, detect_ats
+        apply_url = job.get("application_url") or job.get("url")
+        ats_info = detect_ats(apply_url)
+        ats_playbook = get_apply_strategy(apply_url, ats_info)
+        if not ats_info.supports_auto:
+            ats_playbook += (
+                "\nNOTE: This ATS is marked HARD/manual-first. "
+                "If blocked by login/CAPTCHA twice, output RESULT:FAILED:captcha or RESULT:FAILED:sso and stop.\n"
+            )
+    except Exception:
+        ats_playbook = ""
+
     prompt = f"""You are an autonomous job application agent. Your ONE mission: get this candidate an interview. You have all the information and tools. Think strategically. Act decisively. Submit the application.
+
+{ats_playbook}
 
 == JOB ==
 URL: {job.get('application_url') or job['url']}
