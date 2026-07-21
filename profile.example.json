@@ -26,31 +26,50 @@
     "available_for_contract": "No"
   },
   "compensation": {
-    "salary_expectation": "85000",
+    "salary_expectation": "160000",
     "salary_currency": "USD",
-    "salary_range_min": "80000",
-    "salary_range_max": "100000",
+    "salary_range_min": "140000",
+    "salary_range_max": "190000",
     "currency_conversion_note": ""
   },
   "experience": {
-    "years_of_experience_total": "3",
+    "years_of_experience_total": "6",
     "education_level": "Bachelor's Degree",
-    "current_job_title": "",
-    "current_company": "",
-    "target_role": "software engineer"
+    "current_title": "Network Engineer",
+    "target_role": "Data Center Network Engineer"
   },
   "skills_boundary": {
-    "languages": ["Python", "SQL", "JavaScript"],
-    "frameworks": ["FastAPI", "Flask", "React"],
-    "devops": ["Docker", "AWS", "CI/CD"],
-    "databases": ["PostgreSQL", "MongoDB"],
-    "tools": ["Git", "Linux"]
+    "languages": ["Python", "Bash", "SQL", "Go"],
+    "frameworks": [],
+    "infra": ["Linux", "Cisco NX-OS", "Arista EOS", "BGP", "OSPF", "EVPN", "VXLAN", "AWS", "Kubernetes"],
+    "tools": ["Git", "Terraform", "Ansible", "Wireshark", "Prometheus", "Grafana", "Jenkins"]
   },
   "resume_facts": {
     "preserved_companies": ["Company A", "Company B"],
-    "preserved_projects": ["Project X", "Project Y"],
+    "preserved_projects": ["Leaf-Spine Fabric Build", "Observability Rollout"],
     "preserved_school": "Your University",
-    "real_metrics": ["50% improvement", "10x faster"]
+    "real_metrics": ["99.99% fabric uptime", "400G spine upgrade", "500-node cluster"]
+  },
+  "resumes": [
+    {
+      "id": "network",
+      "label": "Data Center Networking",
+      "path": "resumes/network.txt",
+      "keywords": ["network", "bgp", "evpn", "data center", "cisco", "arista"],
+      "is_default": true
+    },
+    {
+      "id": "sre",
+      "label": "SRE / Platform",
+      "path": "resumes/sre.txt",
+      "keywords": ["sre", "reliability", "kubernetes", "platform", "observability"],
+      "is_default": false
+    }
+  ],
+  "default_resume_id": "network",
+  "tailoring": {
+    "strict_no_fabrication": true,
+    "notes": "Skills outside skills_boundary + base resume are rejected by validators."
   },
   "eeo_voluntary": {
     "gender": "Decline to self-identify",

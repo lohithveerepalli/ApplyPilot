@@ -1,91 +1,99 @@
 # ApplyPilot search configuration
-# Copy to ~/.applypilot/searches.yaml and customize for your job search.
-# The wizard (applypilot init) generates a basic version automatically.
+# Copy to ~/.applypilot/searches.yaml or generate via: applypilot init
+#
+# Tuned for technical infrastructure roles:
+#   Data Center Network · AI Infrastructure · Hardware Validation · SRE · Platform
 
-# Search queries -- each has a query string and priority tier.
-# Tier 1: High-priority exact matches (searched first, highest precision)
-# Tier 2: Strong matches, broader scope
-# Tier 3: Wide net, high volume, lower precision
+# Search queries — tier 1 is highest priority / precision
 queries:
-  - query: "software engineer"
+  # --- Data Center Network ---
+  - query: "Data Center Network Engineer"
     tier: 1
-  - query: "backend engineer"
+  - query: "Network Engineer Data Center"
     tier: 1
-  - query: "backend developer"
+  - query: "Senior Network Engineer"
     tier: 1
-  - query: "full stack developer"
+  - query: "DC Network Engineer"
     tier: 2
-  - query: "full stack engineer"
+  - query: "Network Engineer"
     tier: 2
-  - query: "python developer"
+
+  # --- AI Infrastructure ---
+  - query: "AI Infrastructure Engineer"
+    tier: 1
+  - query: "ML Infrastructure Engineer"
+    tier: 1
+  - query: "AI Platform Engineer"
     tier: 2
-  - query: "python engineer"
+  - query: "GPU Cluster Engineer"
     tier: 2
-  - query: "DevOps engineer"
+
+  # --- Hardware Validation ---
+  - query: "Hardware Validation Engineer"
+    tier: 1
+  - query: "Silicon Validation Engineer"
+    tier: 1
+  - query: "System Validation Engineer"
     tier: 2
-  - query: "site reliability engineer"
+  - query: "Hardware Test Engineer"
     tier: 2
-  - query: "platform engineer"
+
+  # --- SRE (Infrastructure) ---
+  - query: "Site Reliability Engineer"
+    tier: 1
+  - query: "SRE"
+    tier: 1
+  - query: "Infrastructure SRE"
+    tier: 1
+  - query: "Production Engineer"
     tier: 2
-  - query: "cloud engineer"
+  - query: "Reliability Engineer"
     tier: 2
-  - query: "data engineer"
+
+  # --- Platform ---
+  - query: "Platform Engineer"
+    tier: 1
+  - query: "Cloud Platform Engineer"
+    tier: 1
+  - query: "Developer Platform Engineer"
     tier: 2
-  - query: "infrastructure engineer"
+  - query: "Infrastructure Platform Engineer"
     tier: 2
-  - query: "software developer"
+
+  # --- Broader net ---
+  - query: "Infrastructure Engineer"
     tier: 3
-  - query: "developer"
+  - query: "DevOps Engineer"
     tier: 3
-  - query: "systems engineer"
-    tier: 3
-  - query: "automation engineer"
-    tier: 3
-  - query: "solutions engineer"
-    tier: 3
-  - query: "integration engineer"
-    tier: 3
-  - query: "ML engineer"
-    tier: 3
-  - query: "machine learning engineer"
-    tier: 3
-  - query: "AI engineer"
-    tier: 3
-  - query: "security engineer"
+  - query: "Systems Engineer"
     tier: 3
 
 # Locations to search
 locations:
-  - location: "San Francisco, CA"
+  - location: "United States"
     remote: false
   - location: "Remote"
     remote: true
 
-# Location filtering -- accept/reject patterns for job location text
+# Location filtering — accept/reject patterns for job location text
 location:
   accept_patterns:
-    - "San Francisco"
-    - "Bay Area"
-    - "SF"
-    - "California"
-    - "CA"
-    - "Remote"
-    - "Anywhere"
     - "United States"
     - "US"
     - "USA"
+    - "Remote"
+    - "Anywhere"
+    - "Hybrid"
   reject_patterns:
-    - "New York only"
-    - "Seattle only"
-    - "onsite only"
-    - "London, UK"
-    - "India"
+    - "India only"
     - "Philippines"
+    - "onsite only"
+    - "London, UK only"
 
 # Country for Indeed/LinkedIn/Google Jobs searches
 country: "USA"
 
-# JobSpy source boards (all available options shown)
+# JobSpy source boards
 boards:
   - indeed
   - linkedin
@@ -97,8 +105,9 @@ boards:
 defaults:
   results_per_site: 100  # Max results per board per query
   hours_old: 72          # Only jobs posted within this many hours
+  distance: 50           # Miles (ignored when remote=true)
 
-# Negative keywords -- skip jobs with these in the title (case-insensitive)
+# Negative keywords — skip jobs with these in the title (case-insensitive)
 exclude_titles:
   - "senior director"
   - "VP "
@@ -110,3 +119,10 @@ exclude_titles:
   - "clearance required"
   - "TS/SCI"
   - "principal scientist"
+  - "sales engineer"
+  - "account executive"
+  - "recruiter"
+  - "data scientist"
+  - "ml researcher"
+  - "help desk"
+  - "desktop support"

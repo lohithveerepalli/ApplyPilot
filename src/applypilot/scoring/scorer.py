@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from applypilot.config import RESUME_PATH, load_profile
 from applypilot.database import get_connection, get_jobs_by_stage
 from applypilot.llm import get_client
+from applypilot.resumes import select_resume_for_job
 
 log = logging.getLogger(__name__)
 
@@ -111,7 +112,12 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
     Returns:
         {"scored": int, "errors": int, "elapsed": float, "distribution": list}
     """
-    resume_text = RESUME_PATH.read_text(encoding="utf-8")
+    # Default resume used when multi-resume selection is unavailable
+    default_resume = RESUME_PATH.read_text(encoding="utf-8") if RESUME_PATH.exists() else ""
+    try:
+        profile = load_profile()
+    except FileNotFoundError:
+        profile = {}
     conn = get_connection()
 
     if rescore:
@@ -138,6 +144,10 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
     results: list[dict] = []
 
     for job in jobs:
+        try:
+            _, resume_text = select_resume_for_job(job, profile)
+        except Exception:
+            resume_text = default_resume
         result = score_job(resume_text, job)
         result["url"] = job["url"]
         completed += 1

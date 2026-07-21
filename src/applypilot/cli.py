@@ -88,12 +88,12 @@ def run(
     stream: bool = typer.Option(False, "--stream", help="Run stages concurrently (streaming mode)."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview stages without executing."),
     validation: str = typer.Option(
-        "normal",
+        "strict",
         "--validation",
         help=(
             "Validation strictness for tailor/cover stages. "
-            "strict: banned words = errors, judge must pass. "
-            "normal: banned words = warnings only (default, recommended for Gemini free tier). "
+            "strict (default): no invented skills/experience; judge must pass. "
+            "normal: banned words = warnings; judge warning allowed on last retry. "
             "lenient: banned words ignored, LLM judge skipped (fastest, fewest API calls)."
         ),
     ),
@@ -258,17 +258,34 @@ def apply(
 
 @app.command()
 def status() -> None:
-    """Show pipeline statistics from the database."""
+    """Show pipeline statistics and application tracking from the database."""
     _bootstrap()
 
-    from applypilot.database import get_stats
+    from applypilot.database import get_stats, get_application_stats
 
     stats = get_stats()
+    app_stats = get_application_stats()
 
     console.print("\n[bold]ApplyPilot Pipeline Status[/bold]\n")
 
+    # Application tracking (front and center for volume applicants)
+    tracking = Table(title="Application Tracking", show_header=True, header_style="bold green")
+    tracking.add_column("Metric", style="bold")
+    tracking.add_column("Count", justify="right")
+
+    tracking.add_row("Total applied", str(app_stats["total_applied"]))
+    tracking.add_row("Applied today", str(app_stats["applied_today"]))
+    tracking.add_row("Failed today", str(app_stats["failed_today"]))
+    tracking.add_row("Success (submitted)", str(app_stats["success"]))
+    tracking.add_row("Failed", str(app_stats["failed"]))
+    tracking.add_row("In progress", str(app_stats["in_progress"]))
+    tracking.add_row("Ready to apply", str(app_stats["ready_to_apply"]))
+    tracking.add_row("Success rate", f"{app_stats['success_rate_pct']}%")
+
+    console.print(tracking)
+
     # Summary table
-    summary = Table(title="Pipeline Overview", show_header=True, header_style="bold cyan")
+    summary = Table(title="\nPipeline Overview", show_header=True, header_style="bold cyan")
     summary.add_column("Metric", style="bold")
     summary.add_column("Count", justify="right")
 
@@ -286,6 +303,33 @@ def status() -> None:
     summary.add_row("Apply errors", str(stats["apply_errors"]))
 
     console.print(summary)
+
+    # Recent applications
+    if app_stats["recent"]:
+        recent = Table(title="\nRecent Applications", show_header=True, header_style="bold blue")
+        recent.add_column("Title", max_width=40)
+        recent.add_column("Site", max_width=16)
+        recent.add_column("Status")
+        recent.add_column("When", max_width=20)
+
+        for row in app_stats["recent"]:
+            status_val = row["status"] or "?"
+            if status_val == "applied":
+                status_fmt = "[green]applied[/green]"
+            elif status_val == "failed":
+                status_fmt = "[red]failed[/red]"
+            else:
+                status_fmt = status_val
+            when = row.get("applied_at") or row.get("last_attempted_at") or ""
+            if when and len(when) > 19:
+                when = when[:19]
+            recent.add_row(
+                (row.get("title") or "")[:40],
+                (row.get("site") or "")[:16],
+                status_fmt,
+                when,
+            )
+        console.print(recent)
 
     # Score distribution
     if stats["score_distribution"]:
@@ -322,6 +366,153 @@ def status() -> None:
     console.print()
 
 
+@app.command("track")
+def track() -> None:
+    """Show application tracking only (totals, today, success/failed)."""
+    _bootstrap()
+
+    from applypilot.database import get_application_stats
+
+    app_stats = get_application_stats()
+
+    console.print("\n[bold]Application Tracking[/bold]\n")
+    table = Table(show_header=True, header_style="bold green")
+    table.add_column("Metric", style="bold")
+    table.add_column("Value", justify="right")
+    table.add_row("Total applied", str(app_stats["total_applied"]))
+    table.add_row("Applied today", str(app_stats["applied_today"]))
+    table.add_row("Failed today", str(app_stats["failed_today"]))
+    table.add_row("Success", str(app_stats["success"]))
+    table.add_row("Failed", str(app_stats["failed"]))
+    table.add_row("In progress", str(app_stats["in_progress"]))
+    table.add_row("Ready to apply", str(app_stats["ready_to_apply"]))
+    table.add_row("Success rate", f"{app_stats['success_rate_pct']}%")
+    console.print(table)
+
+    if app_stats["recent"]:
+        recent = Table(title="\nRecent", show_header=True, header_style="bold blue")
+        recent.add_column("Title", max_width=44)
+        recent.add_column("Status")
+        recent.add_column("When", max_width=20)
+        for row in app_stats["recent"]:
+            status_val = row["status"] or "?"
+            color = "green" if status_val == "applied" else ("red" if status_val == "failed" else "white")
+            when = row.get("applied_at") or row.get("last_attempted_at") or ""
+            recent.add_row((row.get("title") or "")[:44], f"[{color}]{status_val}[/{color}]", when[:19] if when else "")
+        console.print(recent)
+    console.print()
+
+
+# ---------------------------------------------------------------------------
+# Multi-resume management
+# ---------------------------------------------------------------------------
+
+resumes_app = typer.Typer(help="Manage multiple base resumes (role-tagged library).")
+app.add_typer(resumes_app, name="resumes")
+
+
+@resumes_app.command("list")
+def resumes_list() -> None:
+    """List registered base resumes."""
+    _bootstrap()
+    from applypilot.resumes import list_resumes, migrate_legacy_resume
+
+    migrate_legacy_resume()
+    items = list_resumes()
+    if not items:
+        console.print(
+            "[yellow]No resumes registered.[/yellow]\n"
+            "Add one: [bold]applypilot resumes add path/to/resume.txt --id default[/bold]\n"
+            "Or re-run [bold]applypilot init[/bold]."
+        )
+        return
+
+    table = Table(title="Base Resumes", show_header=True, header_style="bold cyan")
+    table.add_column("ID")
+    table.add_column("Label")
+    table.add_column("Default")
+    table.add_column("Keywords")
+    table.add_column("File")
+    for r in items:
+        table.add_row(
+            r["id"],
+            r["label"],
+            "[green]yes[/green]" if r["is_default"] else "",
+            ", ".join(r["keywords"][:8]) + ("…" if len(r["keywords"]) > 8 else ""),
+            ("[green]ok[/green] " if r["exists"] else "[red]missing[/red] ") + r["path"],
+        )
+    console.print(table)
+
+
+@resumes_app.command("add")
+def resumes_add(
+    path: str = typer.Argument(..., help="Path to plain-text resume (.txt)."),
+    resume_id: Optional[str] = typer.Option(None, "--id", help="Stable id (default: filename)."),
+    label: Optional[str] = typer.Option(None, "--label", help="Human-readable label."),
+    keywords: Optional[str] = typer.Option(
+        None,
+        "--keywords",
+        "-k",
+        help="Comma-separated match keywords (e.g. 'network,bgp,sre,kubernetes').",
+    ),
+    make_default: bool = typer.Option(False, "--default", help="Mark as the default resume."),
+) -> None:
+    """Add a base resume to the library."""
+    _bootstrap()
+    from applypilot.resumes import add_resume
+
+    kws = [k.strip() for k in (keywords or "").split(",") if k.strip()]
+    try:
+        entry = add_resume(
+            path,
+            resume_id=resume_id,
+            label=label,
+            keywords=kws,
+            make_default=make_default,
+        )
+    except (FileNotFoundError, ValueError) as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
+
+    console.print(
+        f"[green]Added resume[/green] id=[bold]{entry['id']}[/bold] "
+        f"keywords={entry['keywords']} default={entry['is_default']}"
+    )
+
+
+@resumes_app.command("set-default")
+def resumes_set_default(
+    resume_id: str = typer.Argument(..., help="Resume id to make default."),
+) -> None:
+    """Set the default base resume."""
+    _bootstrap()
+    from applypilot.resumes import set_default_resume
+
+    try:
+        set_default_resume(resume_id)
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
+    console.print(f"[green]Default resume set to[/green] [bold]{resume_id}[/bold]")
+
+
+@resumes_app.command("remove")
+def resumes_remove(
+    resume_id: str = typer.Argument(..., help="Resume id to remove."),
+    delete_file: bool = typer.Option(False, "--delete-file", help="Also delete the file from ~/.applypilot/resumes/."),
+) -> None:
+    """Unregister a base resume."""
+    _bootstrap()
+    from applypilot.resumes import remove_resume
+
+    try:
+        remove_resume(resume_id, delete_file=delete_file)
+    except (FileNotFoundError, ValueError) as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
+    console.print(f"[green]Removed resume[/green] [bold]{resume_id}[/bold]")
+
+
 @app.command()
 def dashboard() -> None:
     """Generate and open the HTML dashboard in your browser."""
@@ -356,13 +547,26 @@ def doctor() -> None:
     else:
         results.append(("profile.json", fail_mark, "Run 'applypilot init' to create"))
 
-    # Resume
-    if RESUME_PATH.exists():
+    # Resume (legacy path + multi-resume library)
+    from applypilot.resumes import list_resumes, migrate_legacy_resume
+    try:
+        migrate_legacy_resume()
+    except Exception:
+        pass
+    resume_items = list_resumes()
+    if resume_items:
+        ok_count = sum(1 for r in resume_items if r["exists"])
+        results.append((
+            "resumes",
+            ok_mark if ok_count else fail_mark,
+            f"{ok_count}/{len(resume_items)} registered (applypilot resumes list)",
+        ))
+    elif RESUME_PATH.exists():
         results.append(("resume.txt", ok_mark, str(RESUME_PATH)))
     elif RESUME_PDF_PATH.exists():
         results.append(("resume.txt", warn_mark, "Only PDF found — plain-text needed for AI stages"))
     else:
-        results.append(("resume.txt", fail_mark, "Run 'applypilot init' to add your resume"))
+        results.append(("resume.txt", fail_mark, "Run 'applypilot init' or 'applypilot resumes add'"))
 
     # Search config
     if SEARCH_CONFIG_PATH.exists():

@@ -5,6 +5,32 @@ All notable changes to ApplyPilot will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-07-21
+
+Fork-focused release for high-quality technical volume applications
+(Data Center Network, AI Infrastructure, Hardware Validation, SRE, Platform).
+
+### Added
+- **Multi-resume library** — `~/.applypilot/resumes/` + `profile.json` `resumes[]`
+  with keyword-based auto-selection per job (`applypilot resumes list|add|set-default|remove`)
+- **Application tracking** — `applypilot track` and enhanced `status` show total applied,
+  applied today, failed today, success/failed counts, success rate, and recent apps
+- **Infra role presets** in `applypilot init` for network / AI infra / hardware validation /
+  SRE / platform search query generation
+- **CONFIG.md** written next to user data during init (config map + day-to-day commands)
+- **Stricter default validation** — `--validation strict` is now the default for tailor/cover
+- Expanded `searches.example.yaml` and `profile.example.json` for infrastructure roles
+
+### Changed
+- **Tailoring prompts** — closed skills set; no "closely related tool" padding; under-claim policy
+- **LLM judge** — zero-tolerance fabrication policy (Docker≠K8s, AWS≠Terraform, etc.)
+- **Setup wizard** — multi-resume registration, clearer skills_boundary guidance, role presets
+- **README** — 10-minute setup path for technical users
+- Scoring and tailoring both use multi-resume selection when multiple bases are registered
+
+### Fixed
+- Judge failure in strict mode no longer silently "approves with warning" on last retry
+
 ## [0.2.0] - 2026-02-17
 
 ### Added

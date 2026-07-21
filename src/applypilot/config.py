@@ -11,10 +11,12 @@ APP_DIR = Path(os.environ.get("APPLYPILOT_DIR", Path.home() / ".applypilot"))
 # Core paths
 DB_PATH = APP_DIR / "applypilot.db"
 PROFILE_PATH = APP_DIR / "profile.json"
-RESUME_PATH = APP_DIR / "resume.txt"
+RESUME_PATH = APP_DIR / "resume.txt"          # legacy / default symlink target
 RESUME_PDF_PATH = APP_DIR / "resume.pdf"
+RESUMES_DIR = APP_DIR / "resumes"             # multi-resume library
 SEARCH_CONFIG_PATH = APP_DIR / "searches.yaml"
 ENV_PATH = APP_DIR / ".env"
+CONFIG_GUIDE_PATH = APP_DIR / "CONFIG.md"     # written by init for reference
 
 # Generated output
 TAILORED_DIR = APP_DIR / "tailored_resumes"
@@ -87,7 +89,10 @@ def get_chrome_user_data() -> Path:
 
 def ensure_dirs():
     """Create all required directories."""
-    for d in [APP_DIR, TAILORED_DIR, COVER_LETTER_DIR, LOG_DIR, CHROME_WORKER_DIR, APPLY_WORKER_DIR]:
+    for d in [
+        APP_DIR, RESUMES_DIR, TAILORED_DIR, COVER_LETTER_DIR,
+        LOG_DIR, CHROME_WORKER_DIR, APPLY_WORKER_DIR,
+    ]:
         d.mkdir(parents=True, exist_ok=True)
 
 
@@ -168,6 +173,9 @@ DEFAULTS = {
     "poll_interval": 60,
     "apply_timeout": 300,
     "viewport": "1280x900",
+    # Tailoring defaults to "strict" for high-quality technical applications
+    # (no invented tools/experience). Override with --validation normal|lenient.
+    "validation_mode": "strict",
 }
 
 
@@ -191,7 +199,7 @@ TIER_LABELS = {
 }
 
 TIER_COMMANDS: dict[int, list[str]] = {
-    1: ["init", "run discover", "run enrich", "status", "dashboard"],
+    1: ["init", "run discover", "run enrich", "status", "track", "resumes", "dashboard"],
     2: ["run score", "run tailor", "run cover", "run pdf", "run"],
     3: ["apply"],
 }

@@ -323,7 +323,78 @@ def get_stats(conn: sqlite3.Connection | None = None) -> dict:
         "AND application_url IS NOT NULL"
     ).fetchone()[0]
 
+    # Application tracking (success / failed / today)
+    stats["apply_success"] = conn.execute(
+        "SELECT COUNT(*) FROM jobs WHERE apply_status = 'applied' OR "
+        "(applied_at IS NOT NULL AND (apply_status IS NULL OR apply_status = 'applied'))"
+    ).fetchone()[0]
+
+    stats["apply_failed"] = conn.execute(
+        "SELECT COUNT(*) FROM jobs WHERE apply_status = 'failed'"
+    ).fetchone()[0]
+
+    stats["apply_in_progress"] = conn.execute(
+        "SELECT COUNT(*) FROM jobs WHERE apply_status = 'in_progress'"
+    ).fetchone()[0]
+
+    # Today's applications (UTC date prefix match on ISO timestamps)
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    stats["applied_today"] = conn.execute(
+        "SELECT COUNT(*) FROM jobs WHERE applied_at IS NOT NULL AND applied_at LIKE ?",
+        (f"{today}%",),
+    ).fetchone()[0]
+
+    stats["failed_today"] = conn.execute(
+        "SELECT COUNT(*) FROM jobs WHERE apply_status = 'failed' "
+        "AND last_attempted_at IS NOT NULL AND last_attempted_at LIKE ?",
+        (f"{today}%",),
+    ).fetchone()[0]
+
+    # Recent applications (last 10) for status display
+    recent_rows = conn.execute(
+        "SELECT title, site, apply_status, applied_at, apply_error, last_attempted_at "
+        "FROM jobs "
+        "WHERE applied_at IS NOT NULL OR apply_status IN ('failed', 'applied', 'manual') "
+        "ORDER BY COALESCE(applied_at, last_attempted_at) DESC "
+        "LIMIT 10"
+    ).fetchall()
+    stats["recent_applications"] = [
+        {
+            "title": row[0],
+            "site": row[1],
+            "status": row[2] or ("applied" if row[3] else "unknown"),
+            "applied_at": row[3],
+            "error": row[4],
+            "last_attempted_at": row[5],
+        }
+        for row in recent_rows
+    ]
+
     return stats
+
+
+def get_application_stats(conn: sqlite3.Connection | None = None) -> dict:
+    """Focused application tracking stats for the status/track commands.
+
+    Returns totals, today's counts, success/fail breakdown, and recent rows.
+    """
+    full = get_stats(conn)
+    success = full.get("apply_success", 0)
+    failed = full.get("apply_failed", 0)
+    total_attempts = success + failed
+    success_rate = (success / total_attempts * 100.0) if total_attempts else 0.0
+
+    return {
+        "total_applied": full.get("applied", 0),
+        "applied_today": full.get("applied_today", 0),
+        "failed_today": full.get("failed_today", 0),
+        "success": success,
+        "failed": failed,
+        "in_progress": full.get("apply_in_progress", 0),
+        "ready_to_apply": full.get("ready_to_apply", 0),
+        "success_rate_pct": round(success_rate, 1),
+        "recent": full.get("recent_applications", []),
+    }
 
 
 def store_jobs(conn: sqlite3.Connection, jobs: list[dict],

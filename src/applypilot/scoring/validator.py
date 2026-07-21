@@ -56,16 +56,23 @@ LLM_LEAK_PHRASES: list[str] = [
     "the following cover letter", "the letter below",
 ]
 
-# Known fabrication markers: completely unrelated tools/languages.
-# Reasonable stretches (K8s, Terraform, Redis, Kafka etc.) are ALLOWED.
+# Known fabrication markers: tools/languages that are frequently invented.
+# Skills present in the user's skills_boundary OR original resume are allowed.
+# Everything else on this list is treated as a hard fabrication signal.
 FABRICATION_WATCHLIST: set[str] = {
-    # Languages with zero relation to the candidate's stack
-    "c#", "c++", "golang", "rust", "ruby",
-    "kotlin", "swift", "scala", "matlab",
-    # Frameworks for wrong languages
+    # Languages often fabricated
+    "c#", "c++", "golang", "go ", " rust", "ruby",
+    "kotlin", "swift", "scala", "matlab", "perl", "haskell", "elixir",
+    # Frameworks often invented for ATS keyword stuffing
     "spring", "django", "rails", "angular", "vue", "svelte",
-    # Hard lies: certifications can't be stretched
+    "laravel", "fastapi", "flask", "express.js", "next.js", "nestjs",
+    # Infra / cloud often padded onto non-infra resumes
+    "kubernetes", "k8s", "terraform", "ansible", "puppet", "chef",
+    "helm", "istio", "kafka", "rabbitmq", "redis", "cassandra",
+    "snowflake", "databricks", "spark", "airflow",
+    # Hard lies: certifications must never be invented
     "certif", "certified", "pmp", "scrum master", "aws certified",
+    "cka", "ckad", "rhce", "ccna", "ccnp", "jncie", "cissp",
 }
 
 REQUIRED_SECTIONS: set[str] = {"SUMMARY", "TECHNICAL SKILLS", "EXPERIENCE", "PROJECTS", "EDUCATION"}
@@ -96,7 +103,12 @@ def sanitize_text(text: str) -> str:
 
 # ── JSON Field Validation ─────────────────────────────────────────────────
 
-def validate_json_fields(data: dict, profile: dict, mode: str = "normal") -> dict:
+def validate_json_fields(
+    data: dict,
+    profile: dict,
+    mode: str = "normal",
+    original_text: str = "",
+) -> dict:
     """Validate individual JSON fields from an LLM-generated tailored resume.
 
     Args:
@@ -106,6 +118,7 @@ def validate_json_fields(data: dict, profile: dict, mode: str = "normal") -> dic
                  strict  → banned words are errors (trigger retries)
                  normal  → banned words are warnings (no retry)
                  lenient → banned words ignored entirely
+        original_text: Base resume text used to allow skills that already appear there.
 
     Returns:
         {"passed": bool, "errors": list[str], "warnings": list[str]}
@@ -123,14 +136,26 @@ def validate_json_fields(data: dict, profile: dict, mode: str = "normal") -> dic
     # Collect all text for bulk checks
     all_text_parts: list[str] = [data["summary"]]
 
-    # Skills: check for fabrication (always enforced)
+    # Skills: check for fabrication (always enforced).
+    # Items on the watchlist are only allowed if they appear in skills_boundary
+    # or (when provided) the original resume text.
+    allowed_skills = _build_skills_set(profile)
+    original_lower = (original_text or "").lower()
+
     if isinstance(data["skills"], dict):
         skills_text = " ".join(str(v) for v in data["skills"].values()).lower()
         for fake in FABRICATION_WATCHLIST:
-            if len(fake) <= 2:
+            token = fake.strip()
+            if len(token) <= 2:
                 continue
-            if fake in skills_text:
-                errors.append(f"Fabricated skill: '{fake}'")
+            if token not in skills_text:
+                continue
+            # Allow if user explicitly listed it, or it appears in their base resume
+            if any(token in s or s in token for s in allowed_skills):
+                continue
+            if original_lower and token in original_lower:
+                continue
+            errors.append(f"Fabricated skill: '{token}' (not in skills_boundary or base resume)")
 
     # Experience: preserved companies must be present (always enforced)
     resume_facts = profile.get("resume_facts", {})
@@ -243,24 +268,35 @@ def validate_tailored_resume(text: str, profile: dict, original_text: str = "") 
         warnings.append("Phone missing -- will be injected")
 
     # 7. Scan TECHNICAL SKILLS section for fabricated tools
+    allowed_skills = _build_skills_set(profile)
+    original_lower = (original_text or "").lower()
     skills_start = text_lower.find("technical skills")
     skills_end = text_lower.find("experience", skills_start) if skills_start != -1 else -1
     if skills_start != -1 and skills_end != -1:
         skills_block = text_lower[skills_start:skills_end]
         for fake in FABRICATION_WATCHLIST:
-            if len(fake) <= 2:
+            token = fake.strip()
+            if len(token) <= 2:
                 continue
-            if fake in skills_block:
-                errors.append(f"FABRICATED SKILL in Technical Skills: '{fake}'")
+            if token not in skills_block:
+                continue
+            if any(token in s or s in token for s in allowed_skills):
+                continue
+            if original_lower and token in original_lower:
+                continue
+            errors.append(f"FABRICATED SKILL in Technical Skills: '{token}'")
 
     # 8. Scan full document for fabrication watchlist items not in original
     if original_text:
-        original_lower = original_text.lower()
         for fake in FABRICATION_WATCHLIST:
-            if len(fake) <= 2:
+            token = fake.strip()
+            if len(token) <= 2:
                 continue
-            if fake in text_lower and fake not in original_lower:
-                warnings.append(f"New tool/skill appeared: '{fake}' (not in original)")
+            if token in text_lower and token not in original_lower:
+                if any(token in s or s in token for s in allowed_skills):
+                    continue
+                # Hard error in text validation for new tools not in original
+                errors.append(f"New tool/skill not in base resume: '{token}'")
 
     # 9. Em dashes (should be auto-fixed by sanitize_text, but safety net)
     if "\u2014" in text or "\u2013" in text:
