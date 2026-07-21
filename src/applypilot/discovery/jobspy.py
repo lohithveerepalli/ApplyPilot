@@ -79,18 +79,33 @@ def _scrape_with_retry(kwargs: dict, max_retries: int = 2, backoff: float = 5.0)
 def _load_location_config(search_cfg: dict) -> tuple[list[str], list[str]]:
     """Extract accept/reject location lists from search config.
 
-    Falls back to sensible defaults if not defined in the YAML.
+    Supports both top-level keys (location_accept / location_reject_non_remote)
+    and nested location.accept_patterns / location.reject_patterns used by init.
+    Empty accept list means "accept all non-rejected locations".
     """
-    accept = search_cfg.get("location_accept", [])
-    reject = search_cfg.get("location_reject_non_remote", [])
-    return accept, reject
+    nested = search_cfg.get("location") or {}
+    if not isinstance(nested, dict):
+        nested = {}
+
+    accept = (
+        search_cfg.get("location_accept")
+        or nested.get("accept_patterns")
+        or []
+    )
+    reject = (
+        search_cfg.get("location_reject_non_remote")
+        or nested.get("reject_patterns")
+        or []
+    )
+    return list(accept or []), list(reject or [])
 
 
 def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:
     """Check if a job location passes the user's location filter.
 
-    Remote jobs are always accepted. Non-remote jobs must match an accept
-    pattern and not match a reject pattern.
+    Remote jobs are always accepted. Non-remote jobs must not match a reject
+    pattern. If accept patterns are configured, the location must match one;
+    if accept is empty, all non-rejected locations are kept.
     """
     if not location:
         return True  # unknown location -- keep it, let scorer decide
@@ -103,15 +118,19 @@ def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> 
 
     # Reject non-remote matches
     for r in reject:
-        if r.lower() in loc:
+        if r and r.lower() in loc:
             return False
+
+    # Empty accept list = keep everything not explicitly rejected
+    if not accept:
+        return True
 
     # Accept matches
     for a in accept:
-        if a.lower() in loc:
+        if a and a.lower() in loc:
             return True
 
-    # No match -- reject unknown
+    # Accept list configured but no match
     return False
 
 
