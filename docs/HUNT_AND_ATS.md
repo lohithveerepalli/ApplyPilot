@@ -4,103 +4,70 @@
 
 | Goal | Reality |
 |------|---------|
-| 24/7 scraping | **Hunt loop** polls boards every N minutes |
-| Apply within ~30 min of post | Possible on **Greenhouse / Lever / Ashby / Workday** when AI + apply are funded |
-| Hundreds of company sites | **Public board APIs** + Workday registry + JobSpy |
-| Custom ATS per site (Workday, Amazon, Google, Meta…) | **Playbooks** per ATS injected into the browser agent |
-| Amazon / Google / Meta careers auto-apply | **Hard** — bot defense / SSO; discovery + manual/best-effort only |
+| 24/7 scraping | **Hunt loop** / **daemon** polls boards every N minutes |
+| Apply within ~10–30 min of post | Possible on **Greenhouse / Lever / Ashby / Workday** when agent + apply are funded |
+| Hundreds of company sites | **Public board APIs** + Workday registry + JobSpy + optional Brian dorks |
+| Auto-apply agent | **Grok Build** (default) or Claude Code via `apply/backend/` |
+| Custom ATS playbooks | Injected into the browser agent prompt |
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  HUNT LOOP (applypilot hunt)                            │
+│  HUNT / DAEMON LOOP                                     │
 │  every 5 min (default)                                  │
 ├─────────────────────────────────────────────────────────┤
 │  1. Greenhouse API  ──┐                                 │
 │  2. Lever API       ──┼─► SQLite jobs DB                │
 │  3. Ashby API       ──┤   (dedupe by URL)               │
 │  4. optional JobSpy ──┤                                 │
-│  5. optional Workday──┘                                 │
+│  5. optional Workday──┤                                 │
+│  6. optional Brians ──┘  (Google dorks / SerpAPI)       │
 │                                                         │
-│  6. Score only FRESH jobs (last --max-age minutes)      │
-│  7. Tailor score >= min                                 │
-│  8. optional: auto-apply (Claude + ATS playbook)        │
+│  7. Score only FRESH jobs (last --max-age minutes)      │
+│  8. Tailor score >= min  → PDF (resume-tailor optional) │
+│  9. optional: auto-apply via Grok/Claude + Playwright   │
 └─────────────────────────────────────────────────────────┘
 ```
-
-### Per-ATS playbooks (`applypilot/ats/`)
-
-| ATS | Discover | Auto-apply |
-|-----|----------|------------|
-| Greenhouse | Public boards API | Easy — playbook |
-| Lever | Public postings API | Easy — playbook |
-| Ashby | Public job-board API | Easy — playbook |
-| Workday | employers.yaml CXS API | Medium — multi-page playbook |
-| Indeed | JobSpy | Medium |
-| LinkedIn | JobSpy | Hard (login session) |
-| Amazon.jobs | careers registry (notes) | Hard / often manual |
-| Google Careers | blocked / hard | Hard / often manual |
-| Meta Careers | hard | Hard / often manual |
-
-Detection: `applypilot ats <url>`  
-Strategies injected into Claude apply prompts automatically.
 
 ## Commands
 
 ```bash
-# List how many boards are configured
-applypilot ats
-
-# Classify a job link
-applypilot ats 'https://boards.greenhouse.io/nvidia/jobs/...'
-
 # One fast pass (cron-friendly)
-applypilot hunt --once -w 8
+applypilot hunt --once -w 4
 
-# 24/7 style loop every 5 minutes
-applypilot hunt -i 300 -w 8
+# 24/7 discovery + tailor
+applypilot hunt -i 300 -w 4
 
-# Also scrape Indeed/LinkedIn/Workday each pass (slower)
-applypilot hunt --full -i 600
+# 24/7 + headless auto-apply (Grok)
+applypilot hunt --apply --apply-limit 2 --headless -i 300
 
-# Auto-submit (needs Claude Pro/Max logged in + Chrome/Brave)
-applypilot hunt --apply --apply-limit 3 -i 300
+# Laptop all-in-one
+applypilot daemon
+./scripts/run-daemon.sh
+
+# Brian-style extra discovery
+export SERPAPI_KEY=...
+applypilot hunt --brians --once
 ```
 
-Helper:
+## Agent backends
 
-```bash
-./start.sh hunt        # one pass
-./start.sh hunt-loop   # continuous
-```
+| Backend | Env / flag | CLI |
+|---------|------------|-----|
+| **grok** (default) | `APPLY_BACKEND=grok` | `grok --prompt-file … --permission-mode bypassPermissions` |
+| claude | `APPLY_BACKEND=claude` | `claude -p --mcp-config … --permission-mode bypassPermissions` |
 
-## Add more companies
+Playwright attaches to Chrome CDP. Worker dir gets either Claude MCP JSON or Grok `.grok/config.toml`.
 
-Edit `src/applypilot/config/ats_boards.yaml`:
-
-```yaml
-greenhouse:
-  - { token: somecompany, name: "Some Company" }
-lever:
-  - { company: somecompany, name: "Some Company" }
-ashby:
-  - { board: somecompany, name: "Some Company" }
-```
-
-Find Greenhouse token: open their careers page → often `boards.greenhouse.io/{token}`.
-
-## 30-minute target — what actually matters
+## Timing (~10 min target)
 
 | Step | Time |
 |------|------|
-| Board poll interval | 5 min (default) |
-| Score + tailor 1 job | 1–3 min (API) |
+| Board poll interval | 5 min (default) or 2 min (`-i 120`) |
+| Score + tailor 1 job | 1–3 min |
 | Browser apply | 3–15 min |
 | **Total if posted mid-cycle** | ~10–25 min typical |
-| If posted right after poll | up to interval + process |
-
-Tighter: `applypilot hunt -i 120` (every 2 min) — more polite rate limiting needed.
 
 ## Cost reminder
 
@@ -108,21 +75,11 @@ Tighter: `applypilot hunt -i 120` (every 2 min) — more polite rate limiting ne
 |-------|------|
 | Hunt discovery (HTTP APIs) | Free |
 | Score + tailor | Gemini free or paid LLM |
-| `--apply` | Claude subscription |
+| Auto-apply | Grok / Claude usage |
 
 ## Honest limits
 
-1. **No free unlimited auto-apply** — Claude is paid.
-2. **Amazon/Google/Meta** will often defeat bots; playbooks help but do not guarantee.
-3. **CAPTCHAs / SSO** still kill runs without CapSolver + human accounts.
-4. Scraping can violate site ToS — use at your own risk; prefer public APIs (GH/Lever/Ashby).
-
-## Recommended setup for infra candidates
-
-```bash
-# Free prep machine
-applypilot hunt -i 300 -w 8 --validation normal
-
-# Separate terminal / machine with Claude when ready to burn quota
-applypilot apply --limit 10 --min-score 8
-```
+1. Grok or Claude quota required for `--apply`.
+2. Amazon/Google/Meta often block automation.
+3. CAPTCHAs / SSO still kill runs without CapSolver + sessions.
+4. Prefer public APIs over aggressive scraping.

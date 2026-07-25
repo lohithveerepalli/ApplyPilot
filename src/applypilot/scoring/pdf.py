@@ -358,15 +358,23 @@ def render_pdf(html: str, output_path: str) -> None:
 # ── Public API ───────────────────────────────────────────────────────────
 
 def convert_to_pdf(
-    text_path: Path, output_path: Path | None = None, html_only: bool = False
+    text_path: Path,
+    output_path: Path | None = None,
+    html_only: bool = False,
+    job_description: str | None = None,
 ) -> Path:
     """Convert a text resume/cover letter to PDF.
+
+    Prefers the optional resume-tailor bridge (1-page Awesome-CV style) when
+    RESUME_TAILOR_PATH / package is available and a master YAML exists.
+    Falls back to ApplyPilot's HTML → Playwright PDF renderer.
 
     Args:
         text_path: Path to the .txt file to convert.
         output_path: Optional override for the output path. Defaults to same
             name with .pdf extension.
         html_only: If True, output HTML instead of PDF.
+        job_description: Optional JD text for resume-tailor recompile.
 
     Returns:
         Path to the generated PDF (or HTML) file.
@@ -385,6 +393,23 @@ def convert_to_pdf(
 
     out = output_path or text_path.with_suffix(".pdf")
     out = Path(out)
+
+    # Prefer resume-tailor 1-page PDF when configured
+    try:
+        from applypilot.resume_bridge import try_compile_one_page_pdf
+
+        # Load sibling _JOB.txt as JD if present
+        jd = job_description or ""
+        job_txt = text_path.with_name(text_path.stem + "_JOB.txt")
+        if not jd and job_txt.exists():
+            jd = job_txt.read_text(encoding="utf-8")
+        bridged = try_compile_one_page_pdf(text, jd, out)
+        if bridged and bridged.exists():
+            log.info("PDF generated via resume-tailor: %s", bridged)
+            return bridged
+    except Exception:
+        log.debug("resume-tailor bridge skipped", exc_info=True)
+
     render_pdf(html, str(out))
     log.info("PDF generated: %s", out)
     return out

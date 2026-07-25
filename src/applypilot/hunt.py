@@ -30,9 +30,13 @@ def _iso(dt: datetime) -> str:
     return dt.isoformat()
 
 
-def run_discovery_pass(workers: int = 6, include_jobspy: bool = False) -> dict:
-    """One discovery pass: ATS boards (+ optional JobSpy/Workday)."""
-    stats: dict = {"ats": None, "jobspy": None, "workday": None}
+def run_discovery_pass(
+    workers: int = 4,
+    include_jobspy: bool = False,
+    include_brians: bool = False,
+) -> dict:
+    """One discovery pass: ATS boards (+ optional JobSpy/Workday/Brian dorks)."""
+    stats: dict = {"ats": None, "jobspy": None, "workday": None, "brians": None}
 
     console.print("  [cyan]ATS boards (Greenhouse / Lever / Ashby)...[/cyan]")
     try:
@@ -47,6 +51,20 @@ def run_discovery_pass(workers: int = 6, include_jobspy: bool = False) -> dict:
         log.exception("ATS discovery failed")
         stats["ats"] = {"error": str(e)}
         console.print(f"    [red]ATS error:[/red] {e}")
+
+    if include_brians:
+        console.print("  [cyan]Brian-style Google dork discovery...[/cyan]")
+        try:
+            from applypilot.discovery.brians import run_brians_discovery
+            stats["brians"] = run_brians_discovery()
+            console.print(
+                f"    → +{stats['brians'].get('new', 0)} new "
+                f"({stats['brians'].get('seen', 0)} seen)"
+            )
+        except Exception as e:
+            log.exception("Brians discovery failed")
+            stats["brians"] = {"error": str(e)}
+            console.print(f"    [red]Brians error:[/red] {e}")
 
     if include_jobspy:
         console.print("  [cyan]JobSpy boards...[/cyan]")
@@ -219,17 +237,23 @@ def run_hunt_loop(
     interval_seconds: int = 300,
     max_age_minutes: int = 180,
     min_score: int = 7,
-    workers: int = 6,
+    workers: int = 4,
     include_jobspy: bool = False,
+    include_brians: bool = False,
     auto_apply: bool = False,
-    apply_limit: int = 3,
+    apply_limit: int = 2,
     validation_mode: str = "normal",
     once: bool = False,
+    headless: bool = True,
+    backend_name: str | None = None,
+    apply_workers: int = 1,
 ) -> None:
     """24/7-style hunt loop (or single pass with once=True)."""
     load_env()
     ensure_dirs()
     init_db()
+
+    backend = (backend_name or "grok").strip().lower()
 
     console.print()
     console.print("[bold green]ApplyPilot HUNT mode[/bold green]")
@@ -237,7 +261,9 @@ def run_hunt_loop(
     console.print(f"  fresh window: {max_age_minutes}m")
     console.print(f"  min score:    {min_score}")
     console.print(f"  jobspy/wd:    {include_jobspy}")
-    console.print(f"  auto-apply:   {auto_apply} (limit {apply_limit}/pass)")
+    console.print(f"  brians:       {include_brians}")
+    console.print(f"  auto-apply:   {auto_apply} (limit {apply_limit}/pass, backend={backend})")
+    console.print(f"  headless:     {headless}")
     console.print(f"  validation:   {validation_mode}")
     console.print("  Ctrl+C to stop\n")
 
@@ -246,7 +272,11 @@ def run_hunt_loop(
         pass_num += 1
         console.print(f"[bold]── Hunt pass {pass_num} @ {_utcnow().strftime('%H:%M:%S')} ──[/bold]")
         try:
-            run_discovery_pass(workers=workers, include_jobspy=include_jobspy)
+            run_discovery_pass(
+                workers=workers,
+                include_jobspy=include_jobspy,
+                include_brians=include_brians,
+            )
             result = process_new_jobs(
                 max_age_minutes=max_age_minutes,
                 min_score=min_score,
@@ -258,23 +288,28 @@ def run_hunt_loop(
                 f"ready_to_apply={ready}"
             )
 
-            if auto_apply and ready > 0:
+            if auto_apply and apply_limit > 0 and ready > 0:
                 from applypilot.config import get_tier
                 if get_tier() < 3:
                     console.print(
-                        "  [yellow]auto-apply skipped — need Claude login + Chrome (Tier 3)[/yellow]"
+                        "  [yellow]auto-apply skipped — need Grok Build (or Claude) + Chrome "
+                        "(Tier 3)[/yellow]"
                     )
                 else:
-                    console.print(f"  [cyan]Auto-apply up to {apply_limit}...[/cyan]")
+                    console.print(
+                        f"  [cyan]Auto-apply up to {apply_limit} via {backend} "
+                        f"(headless={headless})...[/cyan]"
+                    )
                     from applypilot.apply.launcher import main as apply_main
                     apply_main(
                         limit=apply_limit,
                         min_score=min_score,
-                        headless=False,
-                        model="haiku",
+                        headless=headless,
+                        model=None,
                         dry_run=False,
                         continuous=False,
-                        workers=1,
+                        workers=max(1, apply_workers),
+                        backend_name=backend,
                     )
 
             stats = get_stats()

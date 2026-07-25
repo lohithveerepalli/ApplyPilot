@@ -10,14 +10,13 @@ Generates a self-contained HTML dashboard with:
 
 from __future__ import annotations
 
-import os
 import webbrowser
 from html import escape
 from pathlib import Path
 
 from rich.console import Console
 
-from applypilot.config import APP_DIR, DB_PATH
+from applypilot.config import APP_DIR
 from applypilot.database import get_connection
 
 console = Console()
@@ -71,6 +70,69 @@ def generate_dashboard(output_path: str | None = None) -> str:
                ROUND(AVG(fit_score), 1) as avg_score
         FROM jobs GROUP BY site ORDER BY high_fit DESC, total DESC
     """).fetchall()
+
+    # Applications (ready / in progress / applied / failed) for status board
+    applications = conn.execute("""
+        SELECT title, site, salary, strategy, fit_score,
+               tailored_resume_path, apply_status, apply_error,
+               applied_at, last_attempted_at, application_url, url
+        FROM jobs
+        WHERE tailored_resume_path IS NOT NULL
+           OR apply_status IS NOT NULL
+           OR applied_at IS NOT NULL
+        ORDER BY
+          CASE apply_status
+            WHEN 'in_progress' THEN 0
+            WHEN 'applied' THEN 1
+            WHEN 'failed' THEN 2
+            ELSE 3
+          END,
+          COALESCE(applied_at, last_attempted_at, tailored_at) DESC
+        LIMIT 200
+    """).fetchall()
+
+    app_rows_html = ""
+    for a in applications:
+        role = escape(a["title"] or "")
+        company = escape(a["site"] or "")
+        pay = escape(a["salary"] or "—")
+        ats = escape(a["strategy"] or a["site"] or "—")
+        score = a["fit_score"] if a["fit_score"] is not None else "—"
+        resume = a["tailored_resume_path"] or ""
+        resume_pdf = ""
+        if resume:
+            p = Path(resume)
+            pdf = p if p.suffix.lower() == ".pdf" else p.with_suffix(".pdf")
+            resume_pdf = escape(str(pdf))
+        status = escape(a["apply_status"] or ("ready" if resume else "—"))
+        ts = escape(a["applied_at"] or a["last_attempted_at"] or "—")
+        err = escape((a["apply_error"] or "")[:80])
+        status_color = {
+            "applied": "#10b981",
+            "in_progress": "#f59e0b",
+            "failed": "#ef4444",
+            "ready": "#60a5fa",
+        }.get(a["apply_status"] or "ready", "#94a3b8")
+        resume_cell = (
+            f'<a class="resume-link" href="file://{resume_pdf}" title="{resume_pdf}">'
+            f'{escape(Path(resume_pdf).name if resume_pdf else "—")}</a>'
+            if resume_pdf else "—"
+        )
+        app_rows_html += f"""
+        <tr>
+          <td>{role}</td>
+          <td>{company}</td>
+          <td>{pay}</td>
+          <td>{ats}</td>
+          <td><span class="score-pill" style="background:{'#10b981' if (a['fit_score'] or 0) >= 7 else '#f59e0b'}">{score}</span></td>
+          <td class="resume-cell">{resume_cell}</td>
+          <td><span style="color:{status_color};font-weight:600">{status}</span>
+              {f'<div class="err">{err}</div>' if err else ''}</td>
+          <td class="ts">{ts}</td>
+        </tr>"""
+
+    if not app_rows_html:
+        app_rows_html = '<tr><td colspan="8" style="color:#64748b">No applications yet — run hunt / tailor / apply.</td></tr>'
 
     # All scored jobs (5+), ordered by score desc
     jobs = conn.execute("""
@@ -291,6 +353,19 @@ def generate_dashboard(output_path: str | None = None) -> str:
   .hidden {{ display: none !important; }}
   .job-count {{ color: #94a3b8; font-size: 0.85rem; margin-bottom: 1rem; }}
 
+  /* Applications table */
+  .apps-section {{ background: #1e293b; border-radius: 12px; padding: 1.5rem; margin-bottom: 2.5rem; overflow-x: auto; }}
+  .apps-section h2 {{ font-size: 1.1rem; margin-bottom: 1rem; color: #e2e8f0; }}
+  table.apps {{ width: 100%; border-collapse: collapse; font-size: 0.82rem; }}
+  table.apps th {{ text-align: left; color: #94a3b8; font-weight: 600; padding: 0.5rem 0.4rem; border-bottom: 1px solid #334155; }}
+  table.apps td {{ padding: 0.55rem 0.4rem; border-bottom: 1px solid #1e293b; vertical-align: top; color: #cbd5e1; }}
+  table.apps tr:hover td {{ background: #0f172a55; }}
+  .resume-link {{ color: #60a5fa; text-decoration: none; word-break: break-all; }}
+  .resume-link:hover {{ text-decoration: underline; }}
+  .resume-cell {{ max-width: 180px; }}
+  .ts {{ color: #64748b; white-space: nowrap; font-size: 0.75rem; }}
+  .err {{ color: #f87171; font-size: 0.7rem; margin-top: 0.15rem; }}
+
   @media (max-width: 768px) {{
     .summary {{ grid-template-columns: repeat(2, 1fr); }}
     .score-section {{ grid-template-columns: 1fr; }}
@@ -309,6 +384,28 @@ def generate_dashboard(output_path: str | None = None) -> str:
   <div class="stat-card stat-ok"><div class="stat-num">{ready}</div><div class="stat-label">Ready (desc + URL)</div></div>
   <div class="stat-card stat-scored"><div class="stat-num">{scored}</div><div class="stat-label">Scored by LLM</div></div>
   <div class="stat-card stat-high"><div class="stat-num">{high_fit}</div><div class="stat-label">Strong Fit (7+)</div></div>
+</div>
+
+<div class="apps-section">
+  <h2>Applications</h2>
+  <p class="subtitle" style="margin-bottom:1rem">Role · Company · Pay · ATS/source · Fit · Resume PDF · Status · Timestamp</p>
+  <table class="apps">
+    <thead>
+      <tr>
+        <th>Role</th>
+        <th>Company / Site</th>
+        <th>Pay</th>
+        <th>Source ATS</th>
+        <th>Fit</th>
+        <th>Resume PDF</th>
+        <th>Status</th>
+        <th>Timestamp</th>
+      </tr>
+    </thead>
+    <tbody>
+      {app_rows_html}
+    </tbody>
+  </table>
 </div>
 
 <div class="filters">

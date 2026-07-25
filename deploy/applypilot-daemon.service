@@ -1,0 +1,30 @@
+[Unit]
+Description=ApplyPilot 24/7 hunt + auto-apply daemon (Grok Build)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+# Or set a fixed user: User=lohith
+WorkingDirectory=/opt/applypilot
+Environment=APPLYPILOT_DIR=%h/.applypilot
+Environment=APPLY_BACKEND=grok
+Environment=PATH=/opt/applypilot/.venv/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HUNT_INTERVAL=300
+Environment=MIN_SCORE=7
+Environment=APPLY_LIMIT=2
+# Soft limits for an old laptop
+CPUQuota=80%
+MemoryMax=2G
+Nice=10
+
+ExecStart=/opt/applypilot/scripts/run-daemon.sh
+Restart=always
+RestartSec=30
+
+# Optional: only if you need display-less Chrome
+# Environment=CHROME_PATH=/usr/bin/chromium-browser
+
+[Install]
+WantedBy=multi-user.target

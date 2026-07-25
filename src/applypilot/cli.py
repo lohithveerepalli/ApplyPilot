@@ -147,24 +147,29 @@ def apply(
     limit: Optional[int] = typer.Option(None, "--limit", "-l", help="Max applications to submit."),
     workers: int = typer.Option(1, "--workers", "-w", help="Number of parallel browser workers."),
     min_score: int = typer.Option(7, "--min-score", help="Minimum fit score for job selection."),
-    model: str = typer.Option("haiku", "--model", "-m", help="Claude model name."),
+    model: Optional[str] = typer.Option(None, "--model", "-m", help="Agent model (default: backend default)."),
+    backend: str = typer.Option(
+        "grok", "--backend", "-b",
+        help="Apply agent backend: grok (default) or claude.",
+    ),
     continuous: bool = typer.Option(False, "--continuous", "-c", help="Run forever, polling for new jobs."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview actions without submitting."),
-    headless: bool = typer.Option(False, "--headless", help="Run browsers in headless mode."),
+    headless: bool = typer.Option(True, "--headless/--headed", help="Run browsers headless (default: headless)."),
     url: Optional[str] = typer.Option(None, "--url", help="Apply to a specific job URL."),
     gen: bool = typer.Option(False, "--gen", help="Generate prompt file for manual debugging instead of running."),
     mark_applied: Optional[str] = typer.Option(None, "--mark-applied", help="Manually mark a job URL as applied."),
     mark_failed: Optional[str] = typer.Option(None, "--mark-failed", help="Manually mark a job URL as failed (provide URL)."),
     fail_reason: Optional[str] = typer.Option(None, "--fail-reason", help="Reason for --mark-failed."),
     reset_failed: bool = typer.Option(False, "--reset-failed", help="Reset all failed jobs for retry."),
+    poll_interval: int = typer.Option(120, "--poll-interval", help="Seconds between DB polls when queue empty."),
 ) -> None:
-    """Launch auto-apply to submit job applications."""
+    """Launch auto-apply to submit job applications (Grok Build by default)."""
     _bootstrap()
 
     from applypilot.config import check_tier, PROFILE_PATH as _profile_path
     from applypilot.database import get_connection
 
-    # --- Utility modes (no Chrome/Claude needed) ---
+    # --- Utility modes (no Chrome/agent needed) ---
 
     if mark_applied:
         from applypilot.apply.launcher import mark_job
@@ -186,7 +191,15 @@ def apply(
 
     # --- Full apply mode ---
 
-    # Check 1: Tier 3 required (Claude Code CLI + Chrome)
+    backend = backend.strip().lower()
+    if backend not in ("grok", "claude"):
+        console.print("[red]--backend must be 'grok' or 'claude'[/red]")
+        raise typer.Exit(code=1)
+
+    import os
+    os.environ["APPLY_BACKEND"] = backend
+
+    # Check 1: Tier 3 required (Grok Build or Claude Code + Chrome + Node)
     check_tier(3, "auto-apply")
 
     # Check 2: Profile exists
@@ -211,35 +224,52 @@ def apply(
             raise typer.Exit(code=1)
 
     if gen:
-        from applypilot.apply.launcher import gen_prompt, BASE_CDP_PORT
+        from applypilot.apply.backend import get_backend
+        from applypilot.apply.launcher import gen_prompt
         target = url or ""
         if not target:
             console.print("[red]--gen requires --url to specify which job.[/red]")
             raise typer.Exit(code=1)
-        prompt_file = gen_prompt(target, min_score=min_score, model=model)
+        b = get_backend(backend)
+        prompt_file = gen_prompt(
+            target, min_score=min_score, model=model or b.default_model(),
+            backend_name=backend,
+        )
         if not prompt_file:
             console.print("[red]No matching job found for that URL.[/red]")
             raise typer.Exit(code=1)
         mcp_path = _profile_path.parent / ".mcp-apply-0.json"
         console.print(f"[green]Wrote prompt to:[/green] {prompt_file}")
-        console.print(f"\n[bold]Run manually:[/bold]")
-        console.print(
-            f"  claude --model {model} -p "
-            f"--mcp-config {mcp_path} "
-            f"--permission-mode bypassPermissions < {prompt_file}"
-        )
+        console.print(f"\n[bold]Run manually ({backend}):[/bold]")
+        if backend == "claude":
+            console.print(
+                f"  claude --model {model or b.default_model()} -p "
+                f"--mcp-config {mcp_path} "
+                f"--permission-mode bypassPermissions < {prompt_file}"
+            )
+        else:
+            console.print(
+                f"  grok --prompt-file {prompt_file} "
+                f"--permission-mode bypassPermissions --always-approve "
+                f"--output-format json -m {model or b.default_model()}"
+            )
         return
 
+    from applypilot.apply.backend import get_backend
     from applypilot.apply.launcher import main as apply_main
 
+    b = get_backend(backend)
     effective_limit = limit if limit is not None else (0 if continuous else 1)
+    resolved_model = model or b.default_model()
 
     console.print("\n[bold blue]Launching Auto-Apply[/bold blue]")
+    console.print(f"  Backend:  {backend}")
     console.print(f"  Limit:    {'unlimited' if continuous else effective_limit}")
     console.print(f"  Workers:  {workers}")
-    console.print(f"  Model:    {model}")
+    console.print(f"  Model:    {resolved_model}")
     console.print(f"  Headless: {headless}")
     console.print(f"  Dry run:  {dry_run}")
+    console.print(f"  Poll:     {poll_interval}s")
     if url:
         console.print(f"  Target:   {url}")
     console.print()
@@ -249,10 +279,12 @@ def apply(
         target_url=url,
         min_score=min_score,
         headless=headless,
-        model=model,
+        model=resolved_model,
         dry_run=dry_run,
         continuous=continuous,
+        poll_interval=poll_interval,
         workers=workers,
+        backend_name=backend,
     )
 
 
@@ -528,28 +560,40 @@ def hunt(
     interval: int = typer.Option(300, "--interval", "-i", help="Seconds between hunt passes (default 5 min)."),
     max_age: int = typer.Option(180, "--max-age", help="Only score/tailor jobs discovered in last N minutes."),
     min_score: int = typer.Option(7, "--min-score", help="Minimum fit score to tailor/apply."),
-    workers: int = typer.Option(6, "--workers", "-w", help="Parallel board fetch workers."),
+    workers: int = typer.Option(4, "--workers", "-w", help="Parallel board fetch workers."),
     full: bool = typer.Option(False, "--full", help="Also run JobSpy + Workday each pass (slower)."),
-    apply: bool = typer.Option(False, "--apply", help="Auto-apply ready jobs each pass (needs Claude Tier 3)."),
-    apply_limit: int = typer.Option(3, "--apply-limit", help="Max applications per hunt pass."),
+    brians: bool = typer.Option(False, "--brians", help="Also run Google-dork / Brian-style discovery."),
+    apply: bool = typer.Option(False, "--apply", help="Auto-apply ready jobs each pass (needs Tier 3 agent)."),
+    apply_limit: int = typer.Option(2, "--apply-limit", help="Max applications per hunt pass."),
+    headless: bool = typer.Option(True, "--headless/--headed", help="Headless browser for auto-apply."),
+    backend: str = typer.Option("grok", "--backend", "-b", help="Apply agent: grok (default) or claude."),
     validation: str = typer.Option("normal", "--validation", help="strict|normal|lenient for tailoring."),
     once: bool = typer.Option(False, "--once", help="Single pass then exit (good for cron)."),
 ) -> None:
     """24/7-style hunt: poll ATS boards → score → tailor → optional apply.
 
     Targets Greenhouse / Lever / Ashby public APIs (dozens of companies) for
-    fast discovery. Goal: materials ready within ~30 minutes of a new posting.
+    fast discovery. Goal: materials ready within ~10–30 minutes of a new posting.
 
     Examples:
-      applypilot hunt --once -w 8
+      applypilot hunt --once -w 4
       applypilot hunt -i 300 --min-score 7
-      applypilot hunt --apply --apply-limit 2   # needs Claude login
+      applypilot hunt --apply --apply-limit 2 --backend grok
+      applypilot hunt --brians --once
     """
     _bootstrap()
 
     if validation not in ("strict", "normal", "lenient"):
         console.print(f"[red]Invalid --validation:[/red] {validation}")
         raise typer.Exit(code=1)
+
+    backend = backend.strip().lower()
+    if backend not in ("grok", "claude"):
+        console.print("[red]--backend must be 'grok' or 'claude'[/red]")
+        raise typer.Exit(code=1)
+
+    import os
+    os.environ["APPLY_BACKEND"] = backend
 
     if apply:
         from applypilot.config import check_tier
@@ -563,10 +607,74 @@ def hunt(
         min_score=min_score,
         workers=workers,
         include_jobspy=full,
+        include_brians=brians,
         auto_apply=apply,
         apply_limit=apply_limit,
         validation_mode=validation,
         once=once,
+        headless=headless,
+        backend_name=backend,
+    )
+
+
+@app.command()
+def daemon(
+    interval: int = typer.Option(300, "--interval", "-i", help="Seconds between hunt passes."),
+    max_age: int = typer.Option(180, "--max-age", help="Only process jobs discovered in last N minutes."),
+    min_score: int = typer.Option(7, "--min-score", help="Minimum fit score to tailor/apply."),
+    workers: int = typer.Option(1, "--workers", "-w", help="Board fetch + apply workers (laptop default: 1)."),
+    apply_limit: int = typer.Option(2, "--apply-limit", help="Max applications per hunt pass."),
+    backend: str = typer.Option("grok", "--backend", "-b", help="Apply agent: grok or claude."),
+    full: bool = typer.Option(False, "--full", help="Also run JobSpy + Workday each pass."),
+    brians: bool = typer.Option(False, "--brians", help="Also run Brian-style Google dork discovery."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Hunt + tailor only; never submit."),
+    validation: str = typer.Option("normal", "--validation", help="strict|normal|lenient."),
+) -> None:
+    """24/7 laptop mode: headless hunt + apply loop (low resource defaults).
+
+    Designed to leave an old laptop running forever. Uses headless Chrome,
+    a single apply worker, polite intervals, and Grok Build by default.
+
+    Prefer: systemd unit (deploy/applypilot-daemon.service) or ./scripts/run-daemon.sh
+    """
+    _bootstrap()
+
+    import os
+    backend = backend.strip().lower()
+    os.environ["APPLY_BACKEND"] = backend
+
+    from applypilot.config import check_tier
+
+    if not dry_run:
+        check_tier(3, "daemon auto-apply")
+    else:
+        check_tier(2, "daemon dry-run")
+
+    console.print("\n[bold green]ApplyPilot DAEMON (24/7 laptop mode)[/bold green]")
+    console.print(f"  backend:     {backend}")
+    console.print(f"  interval:    {interval}s")
+    console.print(f"  workers:     {workers}")
+    console.print(f"  apply/limit: {0 if dry_run else apply_limit}/pass")
+    console.print(f"  headless:    True")
+    console.print(f"  dry_run:     {dry_run}")
+    console.print("  Ctrl+C to stop\n")
+
+    from applypilot.hunt import run_hunt_loop
+
+    run_hunt_loop(
+        interval_seconds=interval,
+        max_age_minutes=max_age,
+        min_score=min_score,
+        workers=max(1, workers),
+        include_jobspy=full,
+        include_brians=brians,
+        auto_apply=not dry_run,
+        apply_limit=apply_limit if not dry_run else 0,
+        validation_mode=validation,
+        once=False,
+        headless=True,
+        backend_name=backend,
+        apply_workers=1,
     )
 
 
@@ -604,6 +712,8 @@ def ats_info(
 def doctor() -> None:
     """Check your setup and diagnose missing requirements."""
     import shutil
+    from pathlib import Path
+
     from applypilot.config import (
         load_env, PROFILE_PATH, RESUME_PATH, RESUME_PDF_PATH,
         SEARCH_CONFIG_PATH, ENV_PATH, get_chrome_path,
@@ -677,13 +787,29 @@ def doctor() -> None:
                         "Set GEMINI_API_KEY in ~/.applypilot/.env (run 'applypilot init')"))
 
     # --- Tier 3 checks ---
-    # Claude Code CLI
-    claude_bin = shutil.which("claude")
-    if claude_bin:
-        results.append(("Claude Code CLI", ok_mark, claude_bin))
+    from applypilot.apply.backend import list_backends
+    from applypilot.config import apply_backend_name
+
+    preferred = apply_backend_name()
+    results.append(("APPLY_BACKEND", ok_mark, preferred))
+
+    for b in list_backends():
+        mark = ok_mark if b["available"] else (
+            fail_mark if b["name"] == preferred else warn_mark
+        )
+        note = b["describe"]
+        if b["name"] == preferred and not b["available"]:
+            note += " — REQUIRED for auto-apply"
+        elif b["name"] != preferred and not b["available"]:
+            note += " (optional fallback)"
+        results.append((f"Agent: {b['name']}", mark, note))
+
+    # xAI key helps Grok auth when not using OAuth session
+    if os.environ.get("XAI_API_KEY") or os.environ.get("GROK_API_KEY"):
+        results.append(("XAI_API_KEY", ok_mark, "present (Grok API)"))
     else:
-        results.append(("Claude Code CLI", fail_mark,
-                        "Install from https://claude.ai/code (needed for auto-apply)"))
+        results.append(("XAI_API_KEY", "[dim]optional[/dim]",
+                        "Set if Grok CLI needs API key (else use grok login/OAuth)"))
 
     # Chrome
     try:
@@ -699,7 +825,7 @@ def doctor() -> None:
         results.append(("Node.js (npx)", ok_mark, npx_bin))
     else:
         results.append(("Node.js (npx)", fail_mark,
-                        "Install Node.js 18+ from nodejs.org (needed for auto-apply)"))
+                        "Install Node.js 18+ from nodejs.org (needed for Playwright MCP)"))
 
     # CapSolver (optional)
     capsolver = os.environ.get("CAPSOLVER_API_KEY")
@@ -708,6 +834,18 @@ def doctor() -> None:
     else:
         results.append(("CapSolver API key", "[dim]optional[/dim]",
                         "Set CAPSOLVER_API_KEY in .env for CAPTCHA solving"))
+
+    # resume-tailor bridge (optional)
+    rt_path = os.environ.get("RESUME_TAILOR_PATH", "")
+    if rt_path and Path(rt_path).exists():
+        results.append(("resume-tailor", ok_mark, rt_path))
+    else:
+        try:
+            import resume_tailor  # noqa: F401
+            results.append(("resume-tailor", ok_mark, "importable package"))
+        except ImportError:
+            results.append(("resume-tailor", "[dim]optional[/dim]",
+                            "Set RESUME_TAILOR_PATH or pip install for 1-page Awesome-CV PDFs"))
 
     # --- Render results ---
     console.print()
@@ -727,9 +865,13 @@ def doctor() -> None:
 
     if tier == 1:
         console.print("[dim]  → Tier 2 unlocks: scoring, tailoring, cover letters (needs LLM API key)[/dim]")
-        console.print("[dim]  → Tier 3 unlocks: auto-apply (needs Claude Code CLI + Chrome + Node.js)[/dim]")
+        console.print("[dim]  → Tier 3 unlocks: auto-apply (Grok Build CLI + Chrome + Node.js)[/dim]")
     elif tier == 2:
-        console.print("[dim]  → Tier 3 unlocks: auto-apply (needs Claude Code CLI + Chrome + Node.js)[/dim]")
+        console.print("[dim]  → Tier 3 unlocks: auto-apply (Grok Build CLI + Chrome + Node.js)[/dim]")
+        console.print("[dim]  → Optional fallback: APPLY_BACKEND=claude with Claude Code CLI[/dim]")
+    else:
+        console.print("[dim]  → 24/7 laptop mode: applypilot daemon[/dim]")
+        console.print("[dim]  → scripts/run-daemon.sh or deploy/applypilot-daemon.service[/dim]")
 
     console.print()
 

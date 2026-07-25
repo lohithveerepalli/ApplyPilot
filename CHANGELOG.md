@@ -5,6 +5,23 @@ All notable changes to ApplyPilot will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-07-25
+
+### Added
+- **Agent backend abstraction** (`apply/backend/`) — `grok` (default) and `claude` backends
+- **Grok Build auto-apply** — headless `grok --prompt-file` + project `.grok/config.toml` Playwright MCP on CDP
+- **`applypilot daemon`** — 24/7 laptop mode (headless hunt + apply, low workers)
+- **Deploy helpers** — `scripts/run-daemon.sh`, `deploy/applypilot-daemon.service`, `deploy/README.md`
+- **Optional Brian-style discovery** — `applypilot hunt --brians` (SerpAPI preferred)
+- **resume-tailor bridge** — optional 1-page PDF via `RESUME_TAILOR_PATH`
+- **Dashboard applications table** — role, company, pay, ATS, fit, resume PDF path, status, timestamp
+
+### Changed
+- Auto-apply **no longer requires Claude Code**; Grok Build is Tier-3 default
+- `apply` defaults to **headless** browsers
+- Doctor / README / `.env.example` rewritten for the new stack
+- Claude Code kept as `--backend claude` fallback
+
 ## [0.5.0] - 2026-07-21
 
 ### Added

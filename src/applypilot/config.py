@@ -199,33 +199,65 @@ TIER_LABELS = {
 }
 
 TIER_COMMANDS: dict[int, list[str]] = {
-    1: ["init", "run discover", "run enrich", "status", "track", "resumes", "dashboard"],
+    1: ["init", "run discover", "run enrich", "status", "track", "resumes", "dashboard", "hunt"],
     2: ["run score", "run tailor", "run cover", "run pdf", "run"],
-    3: ["apply"],
+    3: ["apply", "daemon", "hunt --apply"],
 }
+
+# Laptop / 24x7 soft defaults (override via env)
+LAPTOP_DEFAULTS = {
+    "workers": 1,
+    "poll_interval": 120,
+    "hunt_interval": 300,
+    "apply_limit_per_pass": 2,
+    "headless": True,
+}
+
+
+def apply_backend_name() -> str:
+    """Configured apply agent backend (grok|claude). Default: grok."""
+    return (os.environ.get("APPLY_BACKEND") or "grok").strip().lower()
+
+
+def has_apply_agent() -> bool:
+    """True if the configured (or any) apply agent CLI is available."""
+    backend = apply_backend_name()
+    if backend == "claude":
+        return shutil.which("claude") is not None
+    # default grok
+    if os.environ.get("GROK_BIN") and Path(os.environ["GROK_BIN"]).exists():
+        return True
+    if shutil.which("grok") is not None:
+        return True
+    # Fall back: if user set APPLY_BACKEND=grok but only claude is installed,
+    # still allow tier 3 when claude is present and they switch later.
+    return shutil.which("claude") is not None
 
 
 def get_tier() -> int:
     """Detect the current tier based on available dependencies.
 
-    Tier 1 (Discovery):            Python + pip
-    Tier 2 (AI Scoring & Tailoring): + LLM API key
-    Tier 3 (Full Auto-Apply):       + Claude Code CLI + Chrome
+    Tier 1 (Discovery):              Python + pip
+    Tier 2 (AI Scoring & Tailoring): + LLM API key (Gemini/OpenAI/local)
+    Tier 3 (Full Auto-Apply):        + Grok Build CLI (or Claude Code) + Chrome + Node
     """
     load_env()
 
-    has_llm = any(os.environ.get(k) for k in ("GEMINI_API_KEY", "OPENAI_API_KEY", "LLM_URL"))
+    has_llm = any(
+        os.environ.get(k)
+        for k in ("GEMINI_API_KEY", "OPENAI_API_KEY", "LLM_URL", "XAI_API_KEY")
+    )
     if not has_llm:
         return 1
 
-    has_claude = shutil.which("claude") is not None
     try:
         get_chrome_path()
         has_chrome = True
     except FileNotFoundError:
         has_chrome = False
 
-    if has_claude and has_chrome:
+    has_node = shutil.which("npx") is not None
+    if has_apply_agent() and has_chrome and has_node:
         return 3
 
     return 2
@@ -246,15 +278,33 @@ def check_tier(required: int, feature: str) -> None:
     _console = Console(stderr=True)
 
     missing: list[str] = []
-    if required >= 2 and not any(os.environ.get(k) for k in ("GEMINI_API_KEY", "OPENAI_API_KEY", "LLM_URL")):
+    if required >= 2 and not any(
+        os.environ.get(k)
+        for k in ("GEMINI_API_KEY", "OPENAI_API_KEY", "LLM_URL", "XAI_API_KEY")
+    ):
         missing.append("LLM API key — run [bold]applypilot init[/bold] or set GEMINI_API_KEY")
     if required >= 3:
-        if not shutil.which("claude"):
-            missing.append("Claude Code CLI — install from [bold]https://claude.ai/code[/bold]")
+        backend = apply_backend_name()
+        if backend == "claude":
+            if not shutil.which("claude"):
+                missing.append(
+                    "Claude Code CLI — install from [bold]https://claude.ai/code[/bold] "
+                    "(or set APPLY_BACKEND=grok)"
+                )
+        else:
+            if not shutil.which("grok") and not (
+                os.environ.get("GROK_BIN") and Path(os.environ["GROK_BIN"]).exists()
+            ):
+                missing.append(
+                    "Grok Build CLI — install Grok Build and ensure [bold]grok[/bold] is on PATH "
+                    "(or set APPLY_BACKEND=claude)"
+                )
         try:
             get_chrome_path()
         except FileNotFoundError:
             missing.append("Chrome/Chromium — install or set CHROME_PATH")
+        if not shutil.which("npx"):
+            missing.append("Node.js 18+ (npx) — required for Playwright MCP")
 
     _console.print(
         f"\n[red]'{feature}' requires {TIER_LABELS.get(required, f'Tier {required}')} (Tier {required}).[/red]\n"
