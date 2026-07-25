@@ -1,10 +1,14 @@
-# ApplyPilot (fork)
+# ApplyPilot (Grok edition)
 
-**Discover jobs → score fit → tailor resume honestly → cover letter → auto-apply with Grok Build.**
+**Discover jobs → score fit → tailor resume honestly → cover letter → auto-apply with Grok Build — 24/7 on a laptop.**
 
-Tuned for technical infrastructure roles. Auto-apply is driven by **[Grok Build](https://grok.x.ai/)** (xAI’s terminal agent) + Playwright MCP on headless Chrome. Claude Code remains an optional fallback backend.
+Tuned for technical infrastructure roles (data center, AI infra, hardware validation, SRE, platform). Auto-apply is driven by **Grok Build** (xAI’s terminal agent) + Playwright MCP on headless Chrome. Claude Code remains an optional fallback backend.
 
-> Fork of [Pickle-Pixel/ApplyPilot](https://github.com/Pickle-Pixel/ApplyPilot). Not affiliated with applypilot.app or useapplypilot.com.
+> Private working repo based on [Pickle-Pixel/ApplyPilot](https://github.com/Pickle-Pixel/ApplyPilot) (AGPL-3.0). Not affiliated with applypilot.app or useapplypilot.com.
+
+### Why this repo exists
+
+GitHub **cannot** make a public fork private. This standalone private repository holds the full Grok Build refactor, laptop daemon, hunt mode, and dashboard work without remaining on the public fork network.
 
 ---
 
